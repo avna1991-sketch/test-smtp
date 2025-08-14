@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 from email.message import EmailMessage
 
-from delivery_method_update import (
+from production_scripts_statement_delivery_method_update.delivery_method_update import (
     run,
     initialize,
     fetch_records,
@@ -34,9 +34,9 @@ class TestDeliveryMethodUpdate:
 
     def test_initialize(self, script_data):
         """Test the initialize function"""
-        with patch('delivery_method_update.dna_db_connect') as mock_db_connect, \
-             patch('delivery_method_update.get_config') as mock_get_config, \
-             patch('delivery_method_update.get_email_template') as mock_get_email_template:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.dna_db_connect') as mock_db_connect, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.get_config') as mock_get_config, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.get_email_template') as mock_get_email_template:
             
             mock_db_connect.return_value = MagicMock()
             mock_get_config.return_value = {"test": "config"}
@@ -78,7 +78,7 @@ class TestDeliveryMethodUpdate:
         """Test fetching records with specific run date"""
         all_records = sample_pers_records + sample_org_records
         
-        with patch('delivery_method_update.execute_sql_select') as mock_execute:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.execute_sql_select') as mock_execute:
             mock_execute.return_value = all_records
             
             pers_records, org_records = fetch_records(script_data)
@@ -93,7 +93,7 @@ class TestDeliveryMethodUpdate:
         """Test fetching records with full cleanup mode"""
         all_records = sample_pers_records + sample_org_records
         
-        with patch('delivery_method_update.execute_sql_select') as mock_execute:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.execute_sql_select') as mock_execute:
             mock_execute.return_value = all_records
             
             pers_records, org_records = fetch_records(script_data_full_cleanup)
@@ -125,7 +125,7 @@ class TestDeliveryMethodUpdate:
 
     def test_process_records_success(self, script_data, sample_pers_records, sample_org_records):
         """Test successful processing of records"""
-        with patch('delivery_method_update.update_stdl_userfield') as mock_update, \
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.update_stdl_userfield') as mock_update, \
              patch('pathlib.Path.exists') as mock_exists:
             
             mock_exists.return_value = False
@@ -185,7 +185,7 @@ class TestDeliveryMethodUpdate:
 
     def test_write_report_file_with_successes_and_fails(self, script_data, sample_success_records, sample_fail_records):
         """Test writing report file with both successes and failures"""
-        with patch('delivery_method_update.write_report') as mock_write_report:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.write_report') as mock_write_report:
             write_report_file(script_data, sample_success_records, sample_fail_records)
             
             assert mock_write_report.call_count == 2
@@ -204,7 +204,7 @@ class TestDeliveryMethodUpdate:
 
     def test_write_report_file_only_successes(self, script_data, sample_success_records):
         """Test writing report file with only successes"""
-        with patch('delivery_method_update.write_report') as mock_write_report:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.write_report') as mock_write_report:
             write_report_file(script_data, sample_success_records, [])
             
             assert mock_write_report.call_count == 1
@@ -233,7 +233,7 @@ class TestDeliveryMethodUpdate:
 
     def test_send_notification_email_with_fails(self, script_data, sample_fail_records):
         """Test sending notification email when there are failures"""
-        with patch('delivery_method_update.send_email') as mock_send_email:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.send_email') as mock_send_email:
             mock_send_email.return_value = (True, "Email Sent")
             
             send_notification_email(script_data, sample_fail_records)
@@ -242,18 +242,18 @@ class TestDeliveryMethodUpdate:
 
     def test_send_notification_email_no_fails(self, script_data):
         """Test not sending notification email when there are no failures"""
-        with patch('delivery_method_update.send_email') as mock_send_email:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.send_email') as mock_send_email:
             send_notification_email(script_data, [])
             
             mock_send_email.assert_not_called()
 
     def test_send_email_success(self, script_data):
         """Test successful email sending"""
-        with patch('delivery_method_update.generate_email_content') as mock_content, \
-             patch('delivery_method_update.generate_email_message') as mock_message, \
-             patch('delivery_method_update.is_local_environment') as mock_local, \
-             patch('delivery_method_update.send_email_enabled') as mock_enabled, \
-             patch('delivery_method_update.send_smtp_request') as mock_smtp:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.generate_email_content') as mock_content, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.generate_email_message') as mock_message, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.is_local_environment') as mock_local, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.send_email_enabled') as mock_enabled, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.send_smtp_request') as mock_smtp:
             
             mock_content.return_value = "Test email content"
             mock_message.return_value = MagicMock()
@@ -268,7 +268,7 @@ class TestDeliveryMethodUpdate:
 
     def test_send_email_disabled_local_env(self, script_data):
         """Test email sending disabled in local environment"""
-        with patch('delivery_method_update.is_local_environment') as mock_local:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.is_local_environment') as mock_local:
             mock_local.return_value = True
             
             result, message = send_email(script_data, ["test@example.com"])
@@ -368,8 +368,8 @@ class TestDeliveryMethodUpdate:
         with patch('os.path.dirname') as mock_dirname, \
              patch('os.path.abspath') as mock_abspath, \
              patch('os.path.join') as mock_join, \
-             patch('delivery_method_update.FileSystemLoader') as mock_loader, \
-             patch('delivery_method_update.Environment') as mock_env:
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.FileSystemLoader') as mock_loader, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.Environment') as mock_env:
             
             mock_dirname.return_value = "/test/dir"
             mock_abspath.return_value = "/test/dir/script.py"
@@ -426,11 +426,11 @@ class TestDeliveryMethodUpdate:
 
     def test_run_function_integration(self, script_data):
         """Test the main run function integration"""
-        with patch('delivery_method_update.initialize') as mock_init, \
-             patch('delivery_method_update.fetch_records') as mock_fetch, \
-             patch('delivery_method_update.process_records') as mock_process, \
-             patch('delivery_method_update.write_report_file') as mock_write, \
-             patch('delivery_method_update.send_notification_email') as mock_email:
+        with patch('production_scripts_statement_delivery_method_update.delivery_method_update.initialize') as mock_init, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.fetch_records') as mock_fetch, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.process_records') as mock_process, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.write_report_file') as mock_write, \
+             patch('production_scripts_statement_delivery_method_update.delivery_method_update.send_notification_email') as mock_email:
             
             mock_init.return_value = script_data
             mock_fetch.return_value = ([], [])  # empty person and org records

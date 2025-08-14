@@ -4,7 +4,7 @@ import pytest
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-from delivery_method_update import (
+from production_scripts_statement_delivery_method_update.delivery_method_update import (
     AppWorxEnum,
     get_config,
     ScriptData,
