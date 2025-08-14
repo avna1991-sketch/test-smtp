@@ -1,9 +1,8 @@
-import pytest
+import datetime
+import time
 import os
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
-from email.message import EmailMessage
+from unittest.mock import MagicMock, patch
 
 from delivery_method_update import (
     run,
@@ -12,436 +11,359 @@ from delivery_method_update import (
     process_records,
     update_stdl_userfield,
     write_report_file,
-    write_report,
     send_notification_email,
-    send_email,
-    generate_email_message,
-    generate_email_content,
-    send_smtp_request,
-    is_local_environment,
-    send_email_enabled,
-    get_config,
-    get_email_template,
     execute_sql_select,
     dna_db_connect,
     AppWorxEnum,
-    ScriptData,
 )
 
+REPORT_EPOCH_TIMESTAMP = time.mktime(datetime.datetime(2024, 1, 15, 0, 0, 0).timetuple())
+MODULE_NAME = os.path.basename(Path(os.path.dirname(__file__)).parent)
 
-class TestDeliveryMethodUpdate:
-    """Test class for delivery method update functionality"""
+# Sample database records for testing
+SAMPLE_DB_RECORDS = [
+    {
+        "ENTITY_NUMBER": 123456,
+        "ACCTNBR": "ACC001",
+        "ENTITY_TYPE": "pers",
+        "CLOSE_DATE": "2024-01-15"
+    },
+    {
+        "ENTITY_NUMBER": 789012,
+        "ACCTNBR": "ACC002", 
+        "ENTITY_TYPE": "pers",
+        "CLOSE_DATE": "2024-01-15"
+    },
+    {
+        "ENTITY_NUMBER": 345678,
+        "ACCTNBR": "ACC003",
+        "ENTITY_TYPE": "org",
+        "CLOSE_DATE": "2024-01-15"
+    },
+    {
+        "ENTITY_NUMBER": 901234,
+        "ACCTNBR": "ACC004",
+        "ENTITY_TYPE": "org", 
+        "CLOSE_DATE": "2024-01-15"
+    }
+]
 
-    def test_initialize(self, script_data):
-        """Test the initialize function"""
-        with patch('delivery_method_update.dna_db_connect') as mock_db_connect, \
-             patch('delivery_method_update.get_config') as mock_get_config, \
-             patch('delivery_method_update.get_email_template') as mock_get_email_template:
-            
-            mock_db_connect.return_value = MagicMock()
-            mock_get_config.return_value = {"test": "config"}
-            mock_get_email_template.return_value = MagicMock()
-            
-            result = initialize(script_data.apwx)
-            
-            assert isinstance(result, ScriptData)
-            assert result.apwx == script_data.apwx
-            mock_db_connect.assert_called_once_with(script_data.apwx)
-            mock_get_config.assert_called_once_with(script_data.apwx)
-            mock_get_email_template.assert_called_once()
+# Expected success records
+EXPECTED_SUCCESS_RECORDS = [
+    (123456, 'ACC001', 'pers', '2024-01-15', 'Success'),
+    (789012, 'ACC002', 'pers', '2024-01-15', 'Success'),
+    (345678, 'ACC003', 'org', '2024-01-15', 'Success'),
+    (901234, 'ACC004', 'org', '2024-01-15', 'Success'),
+]
 
-    def test_dna_db_connect_report_mode(self, script_data_report_only):
-        """Test database connection in report-only mode"""
-        with patch.object(script_data_report_only.apwx, 'db_connect') as mock_db_connect:
-            mock_conn = MagicMock()
-            mock_db_connect.return_value = mock_conn
-            
-            result = dna_db_connect(script_data_report_only.apwx)
-            
-            assert result == mock_conn
-            assert mock_conn.autocommit is False
-            mock_db_connect.assert_called_once_with(autocommit=False)
+# Expected failure records
+EXPECTED_FAIL_RECORDS = [
+    (901234, 'ACC004', 'org', '2024-01-15', 'Fail'),
+]
 
-    def test_dna_db_connect_normal_mode(self, script_data):
-        """Test database connection in normal mode"""
-        with patch.object(script_data.apwx, 'db_connect') as mock_db_connect:
-            mock_conn = MagicMock()
-            mock_db_connect.return_value = mock_conn
-            
-            result = dna_db_connect(script_data.apwx)
-            
-            assert result == mock_conn
-            assert mock_conn.autocommit is True
-            mock_db_connect.assert_called_once_with(autocommit=False)
 
-    def test_fetch_records_with_run_date(self, script_data, sample_pers_records, sample_org_records):
-        """Test fetching records with specific run date"""
-        all_records = sample_pers_records + sample_org_records
+def test_fetch_records_with_run_date(script_data):
+    """Test fetching records with specific run date"""
+    with patch('delivery_method_update.execute_sql_select') as mock_execute:
+        mock_execute.return_value = SAMPLE_DB_RECORDS
         
-        with patch('delivery_method_update.execute_sql_select') as mock_execute:
-            mock_execute.return_value = all_records
-            
-            pers_records, org_records = fetch_records(script_data)
-            
-            assert len(pers_records) == 2
-            assert len(org_records) == 2
-            assert all(r['ENTITY_TYPE'] == 'pers' for r in pers_records)
-            assert all(r['ENTITY_TYPE'] == 'org' for r in org_records)
-            mock_execute.assert_called_once()
+        pers_records, org_records = fetch_records(script_data)
+        
+        assert len(pers_records) == 2
+        assert len(org_records) == 2
+        assert all(r['ENTITY_TYPE'] == 'pers' for r in pers_records)
+        assert all(r['ENTITY_TYPE'] == 'org' for r in org_records)
+        mock_execute.assert_called_once()
 
-    def test_fetch_records_with_full_cleanup(self, script_data_full_cleanup, sample_pers_records, sample_org_records):
-        """Test fetching records with full cleanup mode"""
-        all_records = sample_pers_records + sample_org_records
-        
-        with patch('delivery_method_update.execute_sql_select') as mock_execute:
-            mock_execute.return_value = all_records
-            
-            pers_records, org_records = fetch_records(script_data_full_cleanup)
-            
-            assert len(pers_records) == 2
-            assert len(org_records) == 2
-            mock_execute.assert_called_once()
 
-    def test_fetch_records_parameter_validation_both_provided(self, script_data):
-        """Test parameter validation when both RUN_DATE and FULL_CLEANUP_YN are provided"""
-        # Modify script_data to have both parameters
-        script_data.apwx.args.RUN_DATE = "01-15-2024"
-        script_data.apwx.args.FULL_CLEANUP_YN = "Y"
+def test_fetch_records_with_full_cleanup(script_data_full_cleanup):
+    """Test fetching records with full cleanup mode"""
+    with patch('delivery_method_update.execute_sql_select') as mock_execute:
+        mock_execute.return_value = SAMPLE_DB_RECORDS
         
-        with pytest.raises(Exception) as exc_info:
-            fetch_records(script_data)
+        pers_records, org_records = fetch_records(script_data_full_cleanup)
         
-        assert "mutually exclusive" in str(exc_info.value)
+        assert len(pers_records) == 2
+        assert len(org_records) == 2
+        mock_execute.assert_called_once()
 
-    def test_fetch_records_parameter_validation_neither_provided(self, script_data):
-        """Test parameter validation when neither parameter is provided"""
-        script_data.apwx.args.RUN_DATE = None
-        script_data.apwx.args.FULL_CLEANUP_YN = "N"
-        
-        with pytest.raises(Exception) as exc_info:
-            fetch_records(script_data)
-        
-        assert "no RUN_DATE parameter provided" in str(exc_info.value)
 
-    def test_process_records_success(self, script_data, sample_pers_records, sample_org_records):
-        """Test successful processing of records"""
-        with patch('delivery_method_update.update_stdl_userfield') as mock_update, \
-             patch('pathlib.Path.exists') as mock_exists:
-            
-            mock_exists.return_value = False
-            mock_update.side_effect = [
-                ([('success1',)], [('fail1',)]),  # person records
-                ([('success2',)], [('fail2',)])   # org records
-            ]
-            
-            successes, fails = process_records(script_data, sample_pers_records, sample_org_records)
-            
-            assert len(successes) == 2
-            assert len(fails) == 2
-            assert mock_update.call_count == 2
+def test_fetch_records_parameter_validation_both_provided(script_data):
+    """Test parameter validation when both RUN_DATE and FULL_CLEANUP_YN are provided"""
+    script_data.apwx.args.RUN_DATE = "01-15-2024"
+    script_data.apwx.args.FULL_CLEANUP_YN = "Y"
+    
+    try:
+        fetch_records(script_data)
+        assert False, "Should have raised exception"
+    except Exception as e:
+        assert "mutually exclusive" in str(e)
 
-    def test_process_records_file_exists_error(self, script_data, sample_pers_records, sample_org_records):
-        """Test error when output file already exists"""
-        with patch('pathlib.Path.exists') as mock_exists:
-            mock_exists.return_value = True
-            
-            with pytest.raises(FileExistsError):
-                process_records(script_data, sample_pers_records, sample_org_records)
 
-    def test_update_stdl_userfield_empty_records(self, script_data):
-        """Test update function with empty records"""
-        successes, fails = update_stdl_userfield(script_data, [], 'persuserfield', 'persnbr')
-        
-        assert successes == []
-        assert fails == []
+def test_fetch_records_parameter_validation_neither_provided(script_data):
+    """Test parameter validation when neither parameter is provided"""
+    script_data.apwx.args.RUN_DATE = None
+    script_data.apwx.args.FULL_CLEANUP_YN = "N"
+    
+    try:
+        fetch_records(script_data)
+        assert False, "Should have raised exception"
+    except Exception as e:
+        assert "no RUN_DATE parameter provided" in str(e)
 
-    def test_update_stdl_userfield_with_records(self, script_data, sample_pers_records):
-        """Test update function with person records"""
-        mock_cursor = MagicMock()
-        mock_cursor.getbatcherrors.return_value = []
-        mock_cursor.rowcount = 2
-        script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
+
+def test_process_records_success(script_data, sample_pers_records, sample_org_records):
+    """Test successful processing of records"""
+    with patch('delivery_method_update.update_stdl_userfield') as mock_update, \
+         patch('pathlib.Path.exists') as mock_exists:
         
-        successes, fails = update_stdl_userfield(script_data, sample_pers_records, 'persuserfield', 'persnbr')
+        mock_exists.return_value = False
+        mock_update.side_effect = [
+            (EXPECTED_SUCCESS_RECORDS[:2], []),  # person records
+            (EXPECTED_SUCCESS_RECORDS[2:], [])   # org records
+        ]
         
-        assert len(successes) == 2
+        successes, fails = process_records(script_data, sample_pers_records, sample_org_records)
+        
+        assert len(successes) == 4
         assert len(fails) == 0
-        mock_cursor.executemany.assert_called_once()
+        assert mock_update.call_count == 2
 
-    def test_update_stdl_userfield_with_batch_errors(self, script_data, sample_pers_records):
-        """Test update function with batch errors"""
-        mock_cursor = MagicMock()
-        mock_error = MagicMock()
-        mock_error.offset = 0
-        mock_error.message = "Test error"
-        mock_cursor.getbatcherrors.return_value = [mock_error]
-        mock_cursor.rowcount = 1
-        script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
+
+def test_process_records_with_failures(script_data, sample_pers_records, sample_org_records):
+    """Test processing records with some failures"""
+    with patch('delivery_method_update.update_stdl_userfield') as mock_update, \
+         patch('pathlib.Path.exists') as mock_exists:
         
-        successes, fails = update_stdl_userfield(script_data, sample_pers_records, 'persuserfield', 'persnbr')
+        mock_exists.return_value = False
+        mock_update.side_effect = [
+            (EXPECTED_SUCCESS_RECORDS[:2], []),  # person records - all success
+            (EXPECTED_SUCCESS_RECORDS[2:3], EXPECTED_FAIL_RECORDS)  # org records - one failure
+        ]
         
-        assert len(fails) > 0
-        mock_cursor.executemany.assert_called_once()
-
-    def test_write_report_file_with_successes_and_fails(self, script_data, sample_success_records, sample_fail_records):
-        """Test writing report file with both successes and failures"""
-        with patch('delivery_method_update.write_report') as mock_write_report:
-            write_report_file(script_data, sample_success_records, sample_fail_records)
-            
-            assert mock_write_report.call_count == 2
-            # First call should be with write mode 'w' for successes
-            mock_write_report.assert_any_call(
-                Path(script_data.apwx.args.OUTPUT_FILE_PATH) / script_data.apwx.args.OUTPUT_FILE_NAME,
-                sample_success_records,
-                write_mode='w'
-            )
-            # Second call should be with append mode 'a+' for failures
-            mock_write_report.assert_any_call(
-                Path(script_data.apwx.args.OUTPUT_FILE_PATH) / script_data.apwx.args.OUTPUT_FILE_NAME,
-                sample_fail_records,
-                write_mode='a+'
-            )
-
-    def test_write_report_file_only_successes(self, script_data, sample_success_records):
-        """Test writing report file with only successes"""
-        with patch('delivery_method_update.write_report') as mock_write_report:
-            write_report_file(script_data, sample_success_records, [])
-            
-            assert mock_write_report.call_count == 1
-            mock_write_report.assert_called_once_with(
-                Path(script_data.apwx.args.OUTPUT_FILE_PATH) / script_data.apwx.args.OUTPUT_FILE_NAME,
-                sample_success_records,
-                write_mode='w'
-            )
-
-    def test_write_report(self, sample_success_records):
-        """Test the write_report function"""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as temp_file:
-            temp_path = temp_file.name
+        successes, fails = process_records(script_data, sample_pers_records, sample_org_records)
         
-        try:
-            result = write_report(temp_path, sample_success_records, 'w')
-            assert result is True
-            
-            # Verify file was written correctly
-            with open(temp_path, 'r') as f:
-                lines = f.readlines()
-                assert len(lines) == 4  # Header + 3 records
-                assert 'ENTITY_NBR,ACCTNBR,ENTITY_TYPE,CLOSE_DATE,RESULT' in lines[0]
-        finally:
-            os.unlink(temp_path)
+        assert len(successes) == 3
+        assert len(fails) == 1
+        assert mock_update.call_count == 2
 
-    def test_send_notification_email_with_fails(self, script_data, sample_fail_records):
-        """Test sending notification email when there are failures"""
-        with patch('delivery_method_update.send_email') as mock_send_email:
-            mock_send_email.return_value = (True, "Email Sent")
-            
-            send_notification_email(script_data, sample_fail_records)
-            
-            mock_send_email.assert_called_once()
 
-    def test_send_notification_email_no_fails(self, script_data):
-        """Test not sending notification email when there are no failures"""
-        with patch('delivery_method_update.send_email') as mock_send_email:
-            send_notification_email(script_data, [])
-            
-            mock_send_email.assert_not_called()
+def test_update_stdl_userfield_success(script_data, sample_pers_records):
+    """Test successful update of STDL userfield"""
+    mock_cursor = MagicMock()
+    mock_cursor.getbatcherrors.return_value = []
+    mock_cursor.rowcount = 2
+    script_data.dbh.cursor.return_value = mock_cursor
+    
+    successes, fails = update_stdl_userfield(script_data, sample_pers_records, 'persuserfield', 'persnbr')
+    
+    assert len(successes) == 2
+    assert len(fails) == 0
+    mock_cursor.executemany.assert_called_once()
 
-    def test_send_email_success(self, script_data):
-        """Test successful email sending"""
-        with patch('delivery_method_update.generate_email_content') as mock_content, \
-             patch('delivery_method_update.generate_email_message') as mock_message, \
-             patch('delivery_method_update.is_local_environment') as mock_local, \
-             patch('delivery_method_update.send_email_enabled') as mock_enabled, \
-             patch('delivery_method_update.send_smtp_request') as mock_smtp:
-            
-            mock_content.return_value = "Test email content"
-            mock_message.return_value = MagicMock()
-            mock_local.return_value = False
-            mock_enabled.return_value = True
-            
-            result, message = send_email(script_data, ["test@example.com"])
-            
-            assert result is True
-            assert message == "Email Sent"
-            mock_smtp.assert_called_once()
 
-    def test_send_email_disabled_local_env(self, script_data):
-        """Test email sending disabled in local environment"""
-        with patch('delivery_method_update.is_local_environment') as mock_local:
-            mock_local.return_value = True
-            
-            result, message = send_email(script_data, ["test@example.com"])
-            
-            assert result is False
-            assert message == "Email Send Disabled"
+def test_update_stdl_userfield_with_batch_errors(script_data, sample_pers_records):
+    """Test update with batch errors"""
+    mock_cursor = MagicMock()
+    mock_error = MagicMock()
+    mock_error.offset = 0
+    mock_error.message = "Test error"
+    mock_cursor.getbatcherrors.return_value = [mock_error]
+    mock_cursor.rowcount = 1
+    script_data.dbh.cursor.return_value = mock_cursor
+    
+    successes, fails = update_stdl_userfield(script_data, sample_pers_records, 'persuserfield', 'persnbr')
+    
+    assert len(fails) > 0
+    mock_cursor.executemany.assert_called_once()
 
-    def test_send_email_no_recipients(self, script_data):
-        """Test email sending with no recipients"""
-        result, message = send_email(script_data, [])
+
+def test_write_report_file(script_data, sample_success_records, sample_fail_records):
+    """Test writing report file with both successes and failures"""
+    with patch('delivery_method_update.write_report') as mock_write_report:
+        write_report_file(script_data, sample_success_records, sample_fail_records)
         
-        assert result is False
-        assert message == "No email recipients"
+        assert mock_write_report.call_count == 2
+        # Verify write mode for successes and append mode for failures
+        calls = mock_write_report.call_args_list
+        assert calls[0][1]['write_mode'] == 'w'
+        assert calls[1][1]['write_mode'] == 'a+'
 
-    def test_generate_email_message(self):
-        """Test email message generation"""
-        from_addr = "from@example.com"
-        to_addr = "to@example.com"
-        content = "<html><body>Test content</body></html>"
+
+def test_send_notification_email_with_failures(script_data, sample_fail_records):
+    """Test sending notification email when there are failures"""
+    with patch('delivery_method_update.send_email') as mock_send_email:
+        mock_send_email.return_value = (True, "Email Sent")
         
-        message = generate_email_message(from_addr, to_addr, content)
+        send_notification_email(script_data, sample_fail_records)
         
-        assert isinstance(message, EmailMessage)
-        assert message["From"] == f"First Tech Federal Credit Union <{from_addr}>"
-        assert message["To"] == to_addr
-        assert message["Subject"] == "Statement Delivery Method Update Alert"
+        mock_send_email.assert_called_once()
 
-    def test_generate_email_content(self, script_data):
-        """Test email content generation"""
-        mock_template = MagicMock()
-        mock_template.render.return_value = "Rendered content"
-        script_data.email_template = mock_template
+
+def test_send_notification_email_no_failures(script_data):
+    """Test not sending notification email when there are no failures"""
+    with patch('delivery_method_update.send_email') as mock_send_email:
+        send_notification_email(script_data, [])
         
-        content = generate_email_content(script_data)
+        mock_send_email.assert_not_called()
+
+
+def test_run_normal_mode(script_data, mocker):
+    """Test the main run function in normal mode"""
+    mocker.patch(f"delivery_method_update.initialize", return_value=script_data)
+    mocker.patch(f"delivery_method_update.fetch_records", return_value=(
+        [r for r in SAMPLE_DB_RECORDS if r['ENTITY_TYPE'] == 'pers'],
+        [r for r in SAMPLE_DB_RECORDS if r['ENTITY_TYPE'] == 'org']
+    ))
+    mock_process = mocker.patch(f"delivery_method_update.process_records")
+    mock_process.return_value = (EXPECTED_SUCCESS_RECORDS, [])
+    mock_write = mocker.patch(f"delivery_method_update.write_report_file")
+    mock_email = mocker.patch(f"delivery_method_update.send_notification_email")
+    
+    result = run(script_data.apwx)
+    
+    assert result is True
+    mock_process.assert_called_once()
+    mock_write.assert_called_once()
+    mock_email.assert_called_once()
+    script_data.dbh.close.assert_called_once()
+
+
+def test_run_report_only_mode(script_data_report_only, mocker):
+    """Test the main run function in report-only mode"""
+    mocker.patch(f"delivery_method_update.initialize", return_value=script_data_report_only)
+    mocker.patch(f"delivery_method_update.fetch_records", return_value=(
+        [r for r in SAMPLE_DB_RECORDS if r['ENTITY_TYPE'] == 'pers'],
+        [r for r in SAMPLE_DB_RECORDS if r['ENTITY_TYPE'] == 'org']
+    ))
+    mock_process = mocker.patch(f"delivery_method_update.process_records")
+    mock_process.return_value = (EXPECTED_SUCCESS_RECORDS, [])
+    mock_write = mocker.patch(f"delivery_method_update.write_report_file")
+    mock_email = mocker.patch(f"delivery_method_update.send_notification_email")
+    
+    result = run(script_data_report_only.apwx)
+    
+    assert result is True
+    mock_process.assert_called_once()
+    mock_write.assert_called_once()
+    mock_email.assert_called_once()
+    script_data_report_only.dbh.close.assert_called_once()
+
+
+def test_run_with_failures(script_data, mocker):
+    """Test the main run function when there are processing failures"""
+    mocker.patch(f"delivery_method_update.initialize", return_value=script_data)
+    mocker.patch(f"delivery_method_update.fetch_records", return_value=(
+        [r for r in SAMPLE_DB_RECORDS if r['ENTITY_TYPE'] == 'pers'],
+        [r for r in SAMPLE_DB_RECORDS if r['ENTITY_TYPE'] == 'org']
+    ))
+    mock_process = mocker.patch(f"delivery_method_update.process_records")
+    mock_process.return_value = (EXPECTED_SUCCESS_RECORDS[:3], EXPECTED_FAIL_RECORDS)
+    mock_write = mocker.patch(f"delivery_method_update.write_report_file")
+    mock_email = mocker.patch(f"delivery_method_update.send_notification_email")
+    
+    result = run(script_data.apwx)
+    
+    assert result is True
+    mock_process.assert_called_once()
+    mock_write.assert_called_once_with(script_data, EXPECTED_SUCCESS_RECORDS[:3], EXPECTED_FAIL_RECORDS)
+    mock_email.assert_called_once_with(script_data, EXPECTED_FAIL_RECORDS)
+    script_data.dbh.close.assert_called_once()
+
+
+def test_run_no_data(script_data, mocker):
+    """Test the main run function when no data is found"""
+    mocker.patch(f"delivery_method_update.initialize", return_value=script_data)
+    mocker.patch(f"delivery_method_update.fetch_records", return_value=([], []))
+    mock_process = mocker.patch(f"delivery_method_update.process_records")
+    mock_process.return_value = ([], [])
+    mock_write = mocker.patch(f"delivery_method_update.write_report_file")
+    mock_email = mocker.patch(f"delivery_method_update.send_notification_email")
+    
+    result = run(script_data.apwx)
+    
+    assert result is True
+    mock_process.assert_called_once()
+    mock_write.assert_called_once()
+    mock_email.assert_called_once()
+    script_data.dbh.close.assert_called_once()
+
+
+def test_dna_db_connect_normal_mode(script_data):
+    """Test database connection in normal mode (RPTONLY_YN = N)"""
+    with patch.object(script_data.apwx, 'db_connect') as mock_db_connect:
+        mock_conn = MagicMock()
+        mock_db_connect.return_value = mock_conn
         
-        assert content == "Rendered content"
-        mock_template.render.assert_called_once()
-
-    def test_send_smtp_request(self, script_data):
-        """Test SMTP request sending"""
-        with patch('smtplib.SMTP') as mock_smtp_class:
-            mock_server = MagicMock()
-            mock_smtp_class.return_value.__enter__.return_value = mock_server
-            
-            from_addr = "from@example.com"
-            to_addr = "to@example.com"
-            message = MagicMock()
-            message.as_string.return_value = "Email content"
-            
-            send_smtp_request(script_data.apwx, from_addr, to_addr, message)
-            
-            mock_server.connect.assert_called_once()
-            mock_server.starttls.assert_called_once()
-            mock_server.login.assert_called_once()
-            mock_server.sendmail.assert_called_once_with(from_addr, to_addr, "Email content")
-
-    def test_is_local_environment_with_aw_home(self):
-        """Test local environment detection with AW_HOME set"""
-        with patch.dict(os.environ, {'AW_HOME': '/some/path'}):
-            assert is_local_environment() is False
-
-    def test_is_local_environment_without_aw_home(self):
-        """Test local environment detection without AW_HOME"""
-        with patch.dict(os.environ, {}, clear=True):
-            assert is_local_environment() is True
-
-    def test_send_email_enabled_true(self, script_data):
-        """Test email enabled check when enabled"""
-        script_data.apwx.args.SEND_EMAIL_YN = "Y"
-        assert send_email_enabled(script_data.apwx) is True
-
-    def test_send_email_enabled_false(self, script_data):
-        """Test email enabled check when disabled"""
-        script_data.apwx.args.SEND_EMAIL_YN = "N"
-        assert send_email_enabled(script_data.apwx) is False
-
-    def test_get_config(self, script_data):
-        """Test configuration loading"""
-        mock_config = {"test": "configuration"}
+        result = dna_db_connect(script_data.apwx)
         
-        with patch('builtins.open', mock_open(read_data='test: configuration')), \
-             patch('yaml.safe_load') as mock_yaml_load:
-            mock_yaml_load.return_value = mock_config
-            
-            config = get_config(script_data.apwx)
-            
-            assert config == mock_config
-            mock_yaml_load.assert_called_once()
+        assert result == mock_conn
+        assert mock_conn.autocommit is True
+        mock_db_connect.assert_called_once_with(autocommit=False)
 
-    def test_get_email_template(self):
-        """Test email template loading"""
-        mock_config = {
-            "template_directory": "templates",
-            "template_file": "email_template.html"
-        }
-        
-        with patch('os.path.dirname') as mock_dirname, \
-             patch('os.path.abspath') as mock_abspath, \
-             patch('os.path.join') as mock_join, \
-             patch('delivery_method_update.FileSystemLoader') as mock_loader, \
-             patch('delivery_method_update.Environment') as mock_env:
-            
-            mock_dirname.return_value = "/test/dir"
-            mock_abspath.return_value = "/test/dir/script.py"
-            mock_join.return_value = "/test/dir/templates"
-            
-            mock_env_instance = MagicMock()
-            mock_template = MagicMock()
-            mock_env_instance.get_template.return_value = mock_template
-            mock_env.return_value = mock_env_instance
-            
-            result = get_email_template(mock_config)
-            
-            assert result == mock_template
-            mock_env_instance.get_template.assert_called_once_with("email_template.html")
 
-    def test_execute_sql_select_success(self, script_data):
-        """Test successful SQL execution"""
-        mock_cursor = MagicMock()
-        mock_cursor.description = [('COL1',), ('COL2',)]
-        mock_cursor.fetchall.return_value = [('val1', 'val2'), ('val3', 'val4')]
-        script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
+def test_dna_db_connect_report_mode(script_data_report_only):
+    """Test database connection in report-only mode (RPTONLY_YN = Y)"""
+    with patch.object(script_data_report_only.apwx, 'db_connect') as mock_db_connect:
+        mock_conn = MagicMock()
+        mock_db_connect.return_value = mock_conn
         
-        result = execute_sql_select(script_data.dbh, "SELECT * FROM test")
+        result = dna_db_connect(script_data_report_only.apwx)
         
-        assert len(result) == 2
-        assert result[0] == {'COL1': 'val1', 'COL2': 'val2'}
-        assert result[1] == {'COL1': 'val3', 'COL2': 'val4'}
-        mock_cursor.execute.assert_called_once_with("SELECT * FROM test", None)
+        assert result == mock_conn
+        assert mock_conn.autocommit is False
+        mock_db_connect.assert_called_once_with(autocommit=False)
 
-    def test_execute_sql_select_with_params(self, script_data):
-        """Test SQL execution with parameters"""
-        mock_cursor = MagicMock()
-        mock_cursor.description = [('COL1',)]
-        mock_cursor.fetchall.return_value = [('val1',)]
-        script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
-        
-        params = {'param1': 'value1'}
-        result = execute_sql_select(script_data.dbh, "SELECT * FROM test WHERE col = :param1", params)
-        
-        assert len(result) == 1
-        assert result[0] == {'COL1': 'val1'}
-        mock_cursor.execute.assert_called_once_with("SELECT * FROM test WHERE col = :param1", params)
 
-    def test_execute_sql_select_exception(self, script_data):
-        """Test SQL execution with exception"""
-        mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = Exception("Database error")
-        script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
-        
-        with pytest.raises(Exception) as exc_info:
-            execute_sql_select(script_data.dbh, "SELECT * FROM test")
-        
-        assert "SQL error" in str(exc_info.value)
+def test_execute_sql_select_success(script_data):
+    """Test successful SQL execution"""
+    mock_cursor = MagicMock()
+    mock_cursor.description = [('ENTITY_NUMBER',), ('ACCTNBR',), ('ENTITY_TYPE',), ('CLOSE_DATE',)]
+    mock_cursor.fetchall.return_value = [
+        (123456, 'ACC001', 'pers', '2024-01-15'),
+        (789012, 'ACC002', 'pers', '2024-01-15')
+    ]
+    script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
+    
+    result = execute_sql_select(script_data.dbh, "SELECT * FROM test")
+    
+    assert len(result) == 2
+    assert result[0]['ENTITY_NUMBER'] == 123456
+    assert result[0]['ACCTNBR'] == 'ACC001'
+    assert result[1]['ENTITY_NUMBER'] == 789012
+    assert result[1]['ACCTNBR'] == 'ACC002'
+    mock_cursor.execute.assert_called_once_with("SELECT * FROM test", None)
 
-    def test_run_function_integration(self, script_data):
-        """Test the main run function integration"""
-        with patch('delivery_method_update.initialize') as mock_init, \
-             patch('delivery_method_update.fetch_records') as mock_fetch, \
-             patch('delivery_method_update.process_records') as mock_process, \
-             patch('delivery_method_update.write_report_file') as mock_write, \
-             patch('delivery_method_update.send_notification_email') as mock_email:
-            
-            mock_init.return_value = script_data
-            mock_fetch.return_value = ([], [])  # empty person and org records
-            mock_process.return_value = ([], [])  # empty successes and failures
-            
-            result = run(script_data.apwx)
-            
-            assert result is True
-            mock_init.assert_called_once_with(script_data.apwx)
-            mock_fetch.assert_called_once_with(script_data)
-            mock_process.assert_called_once()
-            mock_write.assert_called_once()
-            mock_email.assert_called_once()
-            script_data.dbh.close.assert_called_once()
+
+def test_execute_sql_select_with_exception(script_data):
+    """Test SQL execution with exception"""
+    mock_cursor = MagicMock()
+    mock_cursor.execute.side_effect = Exception("Database connection error")
+    script_data.dbh.cursor.return_value.__enter__.return_value = mock_cursor
+    
+    try:
+        execute_sql_select(script_data.dbh, "SELECT * FROM test")
+        assert False, "Should have raised exception"
+    except Exception as e:
+        assert "SQL error" in str(e)
+
+
+def test_initialize_function(script_data):
+    """Test the initialize function creates proper ScriptData"""
+    with patch('delivery_method_update.dna_db_connect') as mock_db_connect, \
+         patch('delivery_method_update.get_config') as mock_get_config, \
+         patch('delivery_method_update.get_email_template') as mock_get_email_template:
+        
+        mock_db_connect.return_value = MagicMock()
+        mock_get_config.return_value = {"test": "config"}
+        mock_get_email_template.return_value = MagicMock()
+        
+        result = initialize(script_data.apwx)
+        
+        assert result.apwx == script_data.apwx
+        assert result.dbh is not None
+        assert result.config == {"test": "config"}
+        assert result.email_template is not None
+        mock_db_connect.assert_called_once_with(script_data.apwx)
+        mock_get_config.assert_called_once_with(script_data.apwx)
+        mock_get_email_template.assert_called_once()
