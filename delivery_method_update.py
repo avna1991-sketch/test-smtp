@@ -35,7 +35,7 @@ class AppWorxEnum(Enum):
     FROM_EMAIL_ADDR = auto()
     TEST_EMAIL_ADDR = auto()
 
-    def _str_(self):
+    def __str__(self):
         return self.name
 
 
@@ -392,7 +392,7 @@ def get_email_template(config: Any) -> Any:
     # Templates are in a 'templates' subfolder relative to the script
     template_directory: str = config["template_directory"]
     template_dir = os.path.join(
-        os.path.dirname(os.path.abspath(_file_)), template_directory
+        os.path.dirname(os.path.abspath(__file__)), template_directory
     )
     file_loader = FileSystemLoader(template_dir)
     env = Environment(loader=file_loader)
@@ -422,7 +422,7 @@ def execute_sql_select(
         raise Exception(f"SQL error = {e}")
 
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     JobTime().print_start()
     run(parse_args(get_apwx()))
     JobTime().print_end()
