@@ -32,6 +32,54 @@ from delivery_method_update import (
 class TestDeliveryMethodUpdate:
     """Test class for delivery method update functionality"""
 
+    @pytest.fixture
+    def sample_pers_records(self):
+        return [
+            {
+                'ENTITY_NUMBER': 123456,
+                'ACCTNBR': 'ACC001',
+                'ENTITY_TYPE': 'pers',
+                'CLOSE_DATE': '2024-01-15'
+            },
+            {
+                'ENTITY_NUMBER': 789012,
+                'ACCTNBR': 'ACC002',
+                'ENTITY_TYPE': 'pers',
+                'CLOSE_DATE': '2024-01-15'
+            }
+        ]
+
+    @pytest.fixture
+    def sample_org_records(self):
+        return [
+            {
+                'ENTITY_NUMBER': 345678,
+                'ACCTNBR': 'ACC003',
+                'ENTITY_TYPE': 'org',
+                'CLOSE_DATE': '2024-01-15'
+            },
+            {
+                'ENTITY_NUMBER': 901234,
+                'ACCTNBR': 'ACC004',
+                'ENTITY_TYPE': 'org',
+                'CLOSE_DATE': '2024-01-15'
+            }
+        ]
+
+    @pytest.fixture
+    def sample_success_records(self):
+        return [
+            (123456, 'ACC001', 'pers', '2024-01-15', 'Success'),
+            (789012, 'ACC002', 'pers', '2024-01-15', 'Success'),
+            (345678, 'ACC003', 'org', '2024-01-15', 'Success'),
+        ]
+
+    @pytest.fixture
+    def sample_fail_records(self):
+        return [
+            (901234, 'ACC004', 'org', '2024-01-15', 'Fail'),
+        ]
+
     def test_initialize(self, script_data):
         """Test the initialize function"""
         with patch('delivery_method_update.dna_db_connect') as mock_db_connect, \
